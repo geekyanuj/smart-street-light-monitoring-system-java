@@ -45,4 +45,11 @@ public class StreetLightController {
     public List<Device> getAllDevices() {
         return deviceRepository.findAll();
     }
+
+
+    @PostMapping("/{deviceId}/syncnow")
+    public ResponseEntity<String> syncNow(@PathVariable String deviceId) {
+        mqttService.triggerManualSync(deviceId);
+        return ResponseEntity.ok("Sync request sent to " + deviceId);
+    }
 }

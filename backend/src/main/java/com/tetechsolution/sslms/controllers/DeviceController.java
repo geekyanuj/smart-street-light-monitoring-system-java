@@ -5,6 +5,7 @@ import com.tetechsolution.sslms.services.DeviceService;
 
 import org.springframework.web.bind.annotation.*;
 import java.util.List;
+import java.util.Map;
 
 @RestController
 @RequestMapping("/devices")
@@ -24,6 +25,13 @@ public class DeviceController {
     @GetMapping
     public List<Device> getAll() {
         return service.getAll();
+    }
+
+    @PatchMapping("/{id}")
+    public Device updateDevicePartially(
+            @PathVariable String id,
+            @RequestBody Map<String, Object> updates) {
+        return service.partialUpdate(id, updates);
     }
 
     @GetMapping("/{id}")

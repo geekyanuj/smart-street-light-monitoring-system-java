@@ -41,14 +41,20 @@ public class MqttService {
     }
 
     private void processIncomingData(String deviceId, String payload) {
+        try {
+
         JSONObject json = new JSONObject(payload);
 
-        double voltage = json.getDouble("v");
-        double current = json.getDouble("c");
-        double power = json.getDouble("p"); // Wattage from PZEM-004T
-        double energy = json.getDouble("e");
-        String relayState = json.getInt("r") == 1 ? "ON" : "OFF";
+        // Use optDouble to prevent crashes if a value is missing
+        double voltage = json.optDouble("v", 0.0);
+        double current = json.optDouble("c", 0.0);
+        double power = json.optDouble("p", 0.0);
 
+        // Match the ESP32 field "r" for relay status
+        int rState = json.optInt("r", 0);
+        String relayState = (rState == 1) ? "ON" : "OFF";
+
+        // IMPORTANT: Ensure deviceId "device1" exists in your DB first!
         // 1. Save Telemetry
         Telemetry data = new Telemetry(deviceId, voltage, current, power);
         telemetryRepository.save(data);
@@ -68,11 +74,14 @@ public class MqttService {
                 }
 
                 // Detection: Overpower/Surge
-                if (power > (baseline + 50.0)) {
+                else if (power > (baseline + 50.0)) {
                     faultRepository.save(new FaultHistory(deviceId, "Overpower Detected", power));
                 }
             }
         });
+        } catch (Exception e) {
+            System.err.println("Error parsing MQTT payload: " + e.getMessage());
+        }
     }
 
     public void sendRelayCommand(String deviceId, String command) {
@@ -82,5 +91,13 @@ public class MqttService {
 
         // Update device status in DB
         deviceRepository.updateStatus(deviceId, command);
+    }
+
+    public void triggerManualSync(String deviceId) {
+        String topic = "smart_street/" + deviceId + "/control";
+        String payload = "GET"; // ESP32 should be programmed to respond to this
+
+        mqttOutboundChannel.send(MessageBuilder.withPayload(payload)
+                .setHeader(MqttHeaders.TOPIC, topic).build());
     }
 }

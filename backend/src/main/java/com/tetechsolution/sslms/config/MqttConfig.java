@@ -4,6 +4,7 @@ import org.eclipse.paho.client.mqttv3.MqttConnectOptions;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.integration.annotation.ServiceActivator;
 import org.springframework.integration.channel.DirectChannel;
 import org.springframework.integration.core.MessageProducer;
 import org.springframework.integration.mqtt.core.DefaultMqttPahoClientFactory;
@@ -55,7 +56,7 @@ public class MqttConfig {
 
         MqttPahoMessageDrivenChannelAdapter adapter =
                 new MqttPahoMessageDrivenChannelAdapter(
-                        "springSubscriber",
+                        "backendSubscriber",
                         factory,
                         "smart_street/+/data"
                 );
@@ -70,6 +71,7 @@ public class MqttConfig {
 
     // ---------------- PUBLISHER ----------------
     @Bean
+    @ServiceActivator(inputChannel = "mqttOutboundChannel")
     public MessageHandler mqttOutbound(MqttPahoClientFactory factory) {
 
         MqttPahoMessageHandler handler =
