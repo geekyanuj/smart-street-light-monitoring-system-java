@@ -41,18 +41,36 @@ public class MqttService {
     }
 
     private void processIncomingData(String deviceId, String payload) {
-        // 1. Parse JSON (Assuming format: {"v":230,"i":10.2,"p":2350})
         JSONObject json = new JSONObject(payload);
-        double current = json.getDouble("i");
 
-        // 2. Save Telemetry
-        Telemetry data = new Telemetry(deviceId, json.getDouble("v"), current, json.getDouble("p"));
+        double voltage = json.getDouble("v");
+        double current = json.getDouble("c");
+        double power = json.getDouble("p"); // Wattage from PZEM-004T
+        double energy = json.getDouble("e");
+        String relayState = json.getInt("r") == 1 ? "ON" : "OFF";
+
+        // 1. Save Telemetry
+        Telemetry data = new Telemetry(deviceId, voltage, current, power);
         telemetryRepository.save(data);
 
-        // 3. Fault Detection (0.5A drop check)
+        // 2. Sync Relay Status
+        deviceRepository.updateStatus(deviceId, relayState);
+
+        // 3. Fault Detection based on Wattage
         deviceRepository.findById(deviceId).ifPresent(device -> {
-            if (current < (device.getBaselineCurrent() - 0.5)) {
-                faultRepository.save(new FaultHistory(deviceId, "Partial Outage Detected", current));
+            Double baseline = device.getBaselineWatt();
+
+            if (baseline != null) {
+                // Detection: Partial Outage (Low Power)
+                // Example: If power drops by more than 10W (one bulb failing or dimming)
+                if (power < (baseline - 10.0)) {
+                    faultRepository.save(new FaultHistory(deviceId, "Partial Outage (Wattage Drop)", power));
+                }
+
+                // Detection: Overpower/Surge
+                if (power > (baseline + 50.0)) {
+                    faultRepository.save(new FaultHistory(deviceId, "Overpower Detected", power));
+                }
             }
         });
     }

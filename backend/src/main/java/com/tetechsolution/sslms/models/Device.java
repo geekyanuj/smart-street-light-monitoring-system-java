@@ -17,6 +17,6 @@ public class Device {
     private String landmark;
     private String area;
     private Integer wardNo;
-    private Double baselineCurrent;
+    private Double baselineWatt;
     private String status;
 }

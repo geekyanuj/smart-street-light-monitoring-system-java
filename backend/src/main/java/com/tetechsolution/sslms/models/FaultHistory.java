@@ -15,16 +15,16 @@ public class FaultHistory {
 
     private String deviceId;
     private String description;
-    private Double currentAtFault;
+    private Double wattAtFault;
     private Boolean resolved = false;
 
     private LocalDateTime timestamp = LocalDateTime.now();
 
     // Custom Constructor for Fault Detection Logic
-    public FaultHistory(String deviceId, String description, Double currentAtFault) {
+    public FaultHistory(String deviceId, String description, Double wattAtFault) {
         this.deviceId = deviceId;
         this.description = description;
-        this.currentAtFault = currentAtFault;
+        this.wattAtFault = wattAtFault;
         this.resolved = false; // Default for new faults
         this.timestamp = LocalDateTime.now();
     }
