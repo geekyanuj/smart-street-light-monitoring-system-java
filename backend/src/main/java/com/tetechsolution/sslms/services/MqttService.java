@@ -14,6 +14,10 @@ import org.springframework.messaging.support.MessageBuilder;
 import org.springframework.integration.mqtt.support.MqttHeaders;
 import org.springframework.stereotype.Service;
 
+import java.util.Map;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ConcurrentHashMap;
+
 @Service
 public class MqttService {
 
@@ -21,6 +25,9 @@ public class MqttService {
     private final DeviceRepository deviceRepository;
     private final TelemetryRepository telemetryRepository;
     private final FaultHistoryRepository faultRepository;
+
+    // Track pending manual sync requests
+    private final Map<String, CompletableFuture<Telemetry>> pendingSyncs = new ConcurrentHashMap<>();
 
     public MqttService(@Qualifier("mqttOutboundChannel") MessageChannel mqttOutboundChannel,
                        DeviceRepository deviceRepository,
@@ -32,72 +39,183 @@ public class MqttService {
         this.faultRepository = faultRepository;
     }
 
+    // =========================
+    // 🔹 MAIN MQTT HANDLER
+    // =========================
     @ServiceActivator(inputChannel = "mqttInputChannel")
     public void handleMessage(Message<String> message) {
-        String topic = message.getHeaders().get("mqtt_receivedTopic").toString();
-        String payload = message.getPayload();
-        String deviceId = topic.split("/")[1];
-        processIncomingData(deviceId, payload);
-    }
-
-    private void processIncomingData(String deviceId, String payload) {
         try {
+            Object topicHeader = message.getHeaders().get(MqttHeaders.RECEIVED_TOPIC);
+            if (topicHeader == null) topicHeader = message.getHeaders().get("mqtt_receivedTopic"); // Fallback
 
-        JSONObject json = new JSONObject(payload);
+            String topic = topicHeader.toString();
+            String payload = message.getPayload();
 
-        // Use optDouble to prevent crashes if a value is missing
-        double voltage = json.optDouble("v", 0.0);
-        double current = json.optDouble("c", 0.0);
-        double power = json.optDouble("p", 0.0);
+            String[] parts = topic.split("/");
+            String deviceId = parts[1];
+            String type = parts.length > 2 ? parts[2] : "";
 
-        // Match the ESP32 field "r" for relay status
-        int rState = json.optInt("r", 0);
-        String relayState = (rState == 1) ? "ON" : "OFF";
+            switch (type) {
 
-        // IMPORTANT: Ensure deviceId "device1" exists in your DB first!
-        // 1. Save Telemetry
-        Telemetry data = new Telemetry(deviceId, voltage, current, power);
-        telemetryRepository.save(data);
+                case "data":
+                    processIncomingData(deviceId, payload);
+                    break;
 
-        // 2. Sync Relay Status
-        deviceRepository.updateStatus(deviceId, relayState);
+                case "get":
+                    handleDeviceGetRequest(deviceId);
+                    break;
 
-        // 3. Fault Detection based on Wattage
-        deviceRepository.findById(deviceId).ifPresent(device -> {
-            Double baseline = device.getBaselineWatt();
-
-            if (baseline != null) {
-                // Detection: Partial Outage (Low Power)
-                // Example: If power drops by more than 10W (one bulb failing or dimming)
-                if (power < (baseline - 10.0)) {
-                    faultRepository.save(new FaultHistory(deviceId, "Partial Outage (Wattage Drop)", power));
-                }
-
-                // Detection: Overpower/Surge
-                else if (power > (baseline + 50.0)) {
-                    faultRepository.save(new FaultHistory(deviceId, "Overpower Detected", power));
-                }
+                default:
+                    System.out.println("Unknown topic type: " + topic);
             }
-        });
+
         } catch (Exception e) {
-            System.err.println("Error parsing MQTT payload: " + e.getMessage());
+            System.err.println("Error routing MQTT message: " + e.getMessage());
         }
     }
 
-    public void sendRelayCommand(String deviceId, String command) {
-        String topic = "smart_street/" + deviceId + "/control";
-        mqttOutboundChannel.send(MessageBuilder.withPayload(command)
-                .setHeader(MqttHeaders.TOPIC, topic).build());
+    // =========================
+    // 🔹 HANDLE DEVICE GET (Device → Server)
+    // =========================
+    private void handleDeviceGetRequest(String deviceId) {
 
-        // Update device status in DB
+        deviceRepository.findById(deviceId).ifPresent(device -> {
+            String state = device.getStatus(); // ON / OFF
+
+            if (state != null) {
+                String topic = "sslms/" + deviceId + "/control";
+
+                mqttOutboundChannel.send(
+                        MessageBuilder.withPayload(state)
+                                .setHeader(MqttHeaders.TOPIC, topic)
+                                .setHeader(MqttHeaders.RETAINED, true) // ✅ retained sync
+                                .build()
+                );
+
+                System.out.println("Sent last state to device: " + state);
+            }
+        });
+    }
+
+    // =========================
+    // 🔹 PROCESS TELEMETRY (Device → Server)
+    // =========================
+    private void processIncomingData(String deviceId, String payload) {
+        try {
+            JSONObject json = new JSONObject(payload);
+
+            double voltage = json.optDouble("v", 0.0);
+            double current = json.optDouble("c", 0.0);
+            double power = json.optDouble("p", 0.0);
+            int rState = json.optInt("r", 0);
+
+            String relayState = (rState == 1) ? "ON" : "OFF";
+
+            // 1. Save telemetry
+            Telemetry data = new Telemetry(deviceId, voltage, current, power);
+            Telemetry savedData = telemetryRepository.save(data);
+
+            // 2. Complete pending manual sync (if any)
+            CompletableFuture<Telemetry> future = pendingSyncs.remove(deviceId);
+            if (future != null) {
+                future.complete(savedData);
+            }
+
+            // 3. Sync relay state in DB
+            deviceRepository.updateStatus(deviceId, relayState);
+
+            // 4. Enforce server truth (IMPORTANT)
+            enforceRelayState(deviceId, relayState);
+
+            // 5. Fault detection
+            deviceRepository.findById(deviceId).ifPresent(device -> {
+                Double baseline = device.getBaselineWatt();
+
+                if (baseline != null) {
+                    Double lowerOffset = device.getLowerOffset();
+                    Double upperOffset = device.getUpperOffset();
+
+                    double lower = baseline - (lowerOffset != null ? lowerOffset : 0.0);
+                    double upper = baseline + (upperOffset != null ? upperOffset : 0.0);
+
+                    if (power < lower) {
+                        faultRepository.save(new FaultHistory(deviceId, "Low Power Fault", power));
+                    }
+                    else if (power > upper) {
+                        faultRepository.save(new FaultHistory(deviceId, "Overpower Fault", power));
+                    }
+                }
+            });
+
+        } catch (Exception e) {
+            System.err.println("Error parsing payload: " + e.getMessage());
+        }
+    }
+
+    // =========================
+    // 🔹 ENFORCE SERVER STATE
+    // =========================
+    private void enforceRelayState(String deviceId, String deviceReportedState) {
+
+        deviceRepository.findById(deviceId).ifPresent(device -> {
+            String expectedState = device.getStatus();
+
+            if (expectedState != null && !expectedState.equals(deviceReportedState)) {
+
+                String topic = "sslms/" + deviceId + "/control";
+
+                mqttOutboundChannel.send(
+                        MessageBuilder.withPayload(expectedState)
+                                .setHeader(MqttHeaders.TOPIC, topic)
+                                .setHeader(MqttHeaders.RETAINED, true)
+                                .build()
+                );
+
+                System.out.println("Corrected relay state → " + expectedState);
+            }
+        });
+    }
+
+    // =========================
+    // 🔹 SEND RELAY COMMAND (App → Device)
+    // =========================
+    public void sendRelayCommand(String deviceId, String command) {
+
+        String topic = "sslms/" + deviceId + "/control";
+
+        mqttOutboundChannel.send(
+                MessageBuilder.withPayload(command)
+                        .setHeader(MqttHeaders.TOPIC, topic)
+                        .setHeader(MqttHeaders.RETAINED, true) // ✅ CRITICAL
+                        .build()
+        );
+
         deviceRepository.updateStatus(deviceId, command);
     }
 
-    public void triggerManualSync(String deviceId) {
-        String topic = "smart_street/" + deviceId + "/control";
-        String payload = "GET"; // ESP32 should be programmed to respond to this
+    public void broadcastCommand(String command) {
+        deviceRepository.findAll().forEach(device -> {
+            sendRelayCommand(device.getDeviceId(), command);
+        });
+    }
 
-        mqttOutboundChannel.send(MessageBuilder.withPayload(payload)
-                .setHeader(MqttHeaders.TOPIC, topic).build());
+    // =========================
+    // 🔹 MANUAL SYNC (App → Device)
+    // =========================
+    public CompletableFuture<Telemetry> triggerManualSync(String deviceId) {
+
+        CompletableFuture<Telemetry> future = new CompletableFuture<>();
+        pendingSyncs.put(deviceId, future);
+
+        // 🥉 Request telemetry from device
+        String topic = "sslms/" + deviceId + "/get";
+
+        mqttOutboundChannel.send(
+                MessageBuilder.withPayload("GET")
+                        .setHeader(MqttHeaders.TOPIC, topic)
+                        .build()
+        );
+
+        return future;
     }
 }

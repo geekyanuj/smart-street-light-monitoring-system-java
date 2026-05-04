@@ -31,27 +31,30 @@ public class DeviceService {
                 .orElseThrow(() -> new RuntimeException("Device not found"));
 
         // Only allow these fields to be updated
-        Set<String> allowedFields = Set.of("feederId", "landmark", "area", "wardNo", "baselineWatt", "status");
+        Set<String> allowedFields = Set.of("feederId", "landmark", "area", "wardNo", "latitude", "longitude", "status", "baselineWatt", "lowerOffset", "upperOffset");
 
         updates.forEach((key, value) -> {
 
             if (!allowedFields.contains(key)) {
-                throw new RuntimeException("Field '" + key + "' is not allowed to update");
+                return; // Skip fields that are not allowed or not in the model
             }
 
             try {
                 Field field = Device.class.getDeclaredField(key);
                 field.setAccessible(true);
 
-                // Optional: type check before setting
-                if (value != null && !field.getType().isAssignableFrom(value.getClass())) {
-                    throw new RuntimeException("Invalid type for field '" + key + "'");
+                if (value == null) {
+                    field.set(device, null);
+                } else if (field.getType() == Double.class && value instanceof Number) {
+                    field.set(device, ((Number) value).doubleValue());
+                } else if (field.getType() == Integer.class && value instanceof Number) {
+                    field.set(device, ((Number) value).intValue());
+                } else if (field.getType().isAssignableFrom(value.getClass())) {
+                    field.set(device, value);
                 }
 
-                field.set(device, value);
-
             } catch (NoSuchFieldException | IllegalAccessException e) {
-                throw new RuntimeException("Error updating field '" + key + "'", e);
+                // Skip if error
             }
         });
 

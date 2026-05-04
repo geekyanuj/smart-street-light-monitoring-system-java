@@ -58,7 +58,7 @@ public class MqttConfig {
                 new MqttPahoMessageDrivenChannelAdapter(
                         "backendSubscriber",
                         factory,
-                        "smart_street/+/data"
+                        "sslms/+/data"
                 );
 
         adapter.setCompletionTimeout(5000);
@@ -79,7 +79,7 @@ public class MqttConfig {
 
         handler.setAsync(true);
         handler.setDefaultQos(1);
-        handler.setDefaultTopic("smart_street/default/control");
+        handler.setDefaultTopic("sslms/default/control");
 
         return handler;
     }

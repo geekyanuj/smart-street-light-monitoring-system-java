@@ -17,6 +17,11 @@ public class Device {
     private String landmark;
     private String area;
     private Integer wardNo;
-    private Double baselineWatt;
+    private Double latitude;
+    private Double longitude;
+
     private String status;
+    private Double baselineWatt;
+    private Double lowerOffset;
+    private Double upperOffset;
 }

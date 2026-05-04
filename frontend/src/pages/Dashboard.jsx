@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   Zap,
@@ -6,37 +6,35 @@ import {
   Lightbulb,
   Power,
   Battery,
-  Clock,
-  TrendingUp,
-  AlertCircle,
   RefreshCw,
   AlertTriangle,
   CheckCircle2,
-  Search
+  Search,
+  Plus,
+  Cpu
 } from "lucide-react";
-import axios from "axios";
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import HierarchySelector from "../components/HierarchySelector";
 import AlertPanel from "../components/AlertPanel";
-
-const API_BASE = import.meta.env.VITE_API_BASE_URL || "http://localhost:5000";
+import AddDeviceForm from "../components/AddDeviceForm";
+import { getDevice, getLatestTelemetry, sendCommand, syncNow, broadcastCommand } from "../api/deviceApi";
 
 const StatCard = ({ title, value, unit, icon: Icon, color, alert }) => (
   <motion.div
-    initial={{ opacity: 0, scale: 0.95 }}
-    animate={{ opacity: 1, scale: 1 }}
-    className={`glass-card p-6 flex items-center gap-6 border-l-4 ${alert ? 'border-l-red-500 bg-red-500/5' : `border-l-${color}-500/50`}`}
+    initial={{ opacity: 0, y: 10 }}
+    animate={{ opacity: 1, y: 0 }}
+    className={`standard-card p-6 flex items-center gap-6 border-l-4 ${alert ? 'border-l-red-500 bg-red-50' : `border-l-blue-500`}`}
   >
-    <div className={`p-4 rounded-2xl bg-${color}-500/10 text-${color}-500`}>
-      <Icon size={32} />
+    <div className={`p-4 rounded-xl bg-slate-100 text-slate-600`}>
+      <Icon size={28} />
     </div>
     <div className="flex-1">
-      <p className="text-gray-400 text-sm font-medium">{title}</p>
-      <div className="flex items-baseline gap-1">
-        <h3 className="text-2xl font-bold text-white tracking-tight">{value}</h3>
-        <span className="text-gray-500 text-xs font-semibold">{unit}</span>
+      <p className="text-slate-500 text-xs font-bold uppercase tracking-wider">{title}</p>
+      <div className="flex items-baseline gap-1 mt-1">
+        <h3 className="text-2xl font-bold text-slate-900">{value}</h3>
+        <span className="text-slate-400 text-xs font-medium">{unit}</span>
       </div>
-      {alert && <p className="text-[10px] text-red-500 mt-1 font-bold uppercase tracking-wider animate-pulse flex items-center gap-1">
+      {alert && <p className="text-[10px] text-red-600 mt-1 font-bold uppercase tracking-wider flex items-center gap-1">
         <AlertTriangle size={10} /> Threshold Fault
       </p>}
     </div>
@@ -45,117 +43,203 @@ const StatCard = ({ title, value, unit, icon: Icon, color, alert }) => (
 
 export default function Dashboard() {
   const [telemetry, setTelemetry] = useState(null);
-  const [history, setHistory] = useState([]);
-  const [feeder, setFeeder] = useState(null);
-  const [selectedFeederId, setSelectedFeederId] = useState(null);
+  const [device, setDevice] = useState(null);
+  const [selectedDeviceId, setSelectedDeviceId] = useState(null);
   const [isRelayOn, setIsRelayOn] = useState(false);
-  const [loading, setLoading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
+  const [isAddFormOpen, setIsAddFormOpen] = useState(false);
 
-  const fetchData = async (id) => {
+  const fetchData = useCallback(async (id) => {
     if (!id) return;
     setRefreshing(true);
     try {
-      const [latestRes, historyRes, feederRes] = await Promise.all([
-        axios.get(`${API_BASE}/api/telemetry/latest?feederId=${id}`),
-        axios.get(`${API_BASE}/api/telemetry/history?limit=30&feederId=${id}`),
-        axios.get(`${API_BASE}/api/feeders/${id}`)
+      const [deviceRes, telemetryRes] = await Promise.all([
+        getDevice(id),
+        getLatestTelemetry(id).catch(() => ({ data: null }))
       ]);
 
-      setTelemetry(latestRes.data);
-      setHistory(historyRes.data.reverse());
-      setFeeder(feederRes.data);
-      if (latestRes.data) {
-        setIsRelayOn(latestRes.data.relayState === 1);
+      setDevice(deviceRes.data);
+      setTelemetry(telemetryRes.data);
+
+      if (telemetryRes.data) {
+        setIsRelayOn(telemetryRes.data.power > 5);
       }
     } catch (err) {
-      console.error("Error fetching telemetry", err);
+      console.error("Error fetching data", err);
+    } finally {
+      setRefreshing(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (selectedDeviceId) {
+      fetchData(selectedDeviceId);
+    }
+  }, [selectedDeviceId, fetchData]);
+
+  const handleControl = async () => {
+    if (!selectedDeviceId || !device) return;
+    const command = device.status === 'ON' ? 'OFF' : 'ON';
+    setRefreshing(true);
+    try {
+      await sendCommand(selectedDeviceId, command);
+      setTimeout(() => fetchData(selectedDeviceId), 1500);
+    } catch (err) {
+      console.error("Control failed", err);
     } finally {
       setRefreshing(false);
     }
   };
 
-  useEffect(() => {
-    if (selectedFeederId) {
-      fetchData(selectedFeederId);
-    }
-  }, [selectedFeederId]);
+  const [syncSuccess, setSyncSuccess] = useState(false);
 
-  const toggleRelay = async () => {
+  const handleManualSync = async () => {
+    if (!selectedDeviceId) return;
+    setRefreshing(true);
+    setSyncSuccess(false);
     try {
-      const newState = isRelayOn ? 0 : 1;
-      await axios.post(`${API_BASE}/api/device/control`, { state: newState });
-      setIsRelayOn(!isRelayOn);
-      setTimeout(() => fetchData(selectedFeederId), 2000);
+      await syncNow(selectedDeviceId);
+      await fetchData(selectedDeviceId);
+      setSyncSuccess(true);
+      setTimeout(() => setSyncSuccess(false), 3000);
     } catch (err) {
-      console.error("Error toggling relay", err);
+      console.error("Sync failed", err);
+    } finally {
+      setRefreshing(false);
+    }
+  };
+  const handleBroadcast = async (command) => {
+    if (!window.confirm(`Are you sure you want to turn ${command} all street lights?`)) return;
+    setRefreshing(true);
+    try {
+      await broadcastCommand(command);
+      setTimeout(() => {
+        if (selectedDeviceId) fetchData(selectedDeviceId);
+      }, 2000);
+    } catch (err) {
+      console.error("Broadcast failed", err);
+    } finally {
+      setRefreshing(false);
     }
   };
 
-  const isFaulty = telemetry && feeder && isRelayOn && (
-    telemetry.power < feeder.thresholds.minPower ||
-    telemetry.power > feeder.thresholds.maxPower
+  const lowerOffset = device?.lowerOffset ?? 100;
+  const upperOffset = device?.upperOffset ?? 100;
+
+  const isFaulty = telemetry && device && isRelayOn && (
+    telemetry.power < device.baselineWatt - lowerOffset ||
+    telemetry.power > device.baselineWatt + upperOffset
   );
 
   return (
-    <div className="space-y-8 animate-in fade-in duration-700 pb-12">
-      {/* Header Section */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
+    <div className="space-y-6 pb-12 animate-in fade-in duration-500">
+      {/* Command Center Header */}
+      <div className="flex flex-col xl:flex-row xl:items-center justify-between gap-6">
         <div>
-          <h1 className="text-4xl font-black bg-gradient-to-r from-white via-blue-400 to-white bg-clip-text text-transparent tracking-tighter">
-            NODE MONITORING
-          </h1>
-          <p className="text-gray-400 mt-1 font-medium flex items-center gap-2">
-            <span className="w-2 h-2 rounded-full bg-blue-500 animate-pulse"></span>
-            Viewing Last Fetched Records
+          <h1 className="text-3xl font-bold text-slate-900 tracking-tight">System Command Center</h1>
+          <p className="text-slate-500 mt-1 font-medium flex items-center gap-2">
+            <span className={`w-2 h-2 rounded-full ${refreshing ? 'bg-blue-500 animate-pulse' : (telemetry ? 'bg-emerald-500' : 'bg-slate-300')}`}></span>
+            {selectedDeviceId ? `Node #${selectedDeviceId} Active` : 'Select Node from Hierarchy'}
           </p>
         </div>
 
-        <div className="flex items-center gap-4">
-          <motion.button
-            whileHover={{ scale: 1.05 }}
-            whileTap={{ scale: 0.95 }}
-            onClick={() => fetchData(selectedFeederId)}
-            className="flex items-center gap-2 px-5 py-3 bg-white/5 border border-white/10 rounded-2xl text-white hover:bg-white/10 transition-all shadow-xl"
+        <div className="flex flex-wrap items-center gap-3">
+          {/* Master Broadcast Group */}
+          <div className="flex items-center gap-1 bg-slate-100 p-1 rounded-xl border border-slate-200">
+            <button
+              onClick={() => handleBroadcast('ON')}
+              disabled={refreshing}
+              className="px-3 py-2 bg-emerald-600 text-white rounded-lg text-[10px] font-black uppercase tracking-tight hover:bg-emerald-700 transition-all disabled:opacity-50 shadow-sm"
+            >
+              Master ON
+            </button>
+            <button
+              onClick={() => handleBroadcast('OFF')}
+              disabled={refreshing}
+              className="px-3 py-2 bg-slate-900 text-white rounded-lg text-[10px] font-black uppercase tracking-tight hover:bg-slate-800 transition-all disabled:opacity-50 shadow-sm"
+            >
+              Master OFF
+            </button>
+          </div>
+
+          <div className="h-8 w-[1px] bg-slate-200 mx-1 hidden lg:block"></div>
+
+          <button
+            onClick={() => setIsAddFormOpen(true)}
+            className="p-2.5 bg-white border border-slate-200 text-slate-500 rounded-xl hover:bg-slate-50 transition-all shadow-sm"
+            title="Provision Node"
+          >
+            <Plus size={20} />
+          </button>
+
+          <button
+            onClick={handleManualSync}
+            disabled={refreshing}
+            className="p-2.5 bg-white border border-slate-200 text-slate-500 rounded-xl hover:bg-slate-50 transition-all shadow-sm"
+            title="Hardware Sync"
           >
             <RefreshCw size={20} className={refreshing ? "animate-spin" : ""} />
-            <span className="text-sm font-bold">RE-FETCH DATA</span>
-          </motion.button>
+          </button>
 
-          <motion.button
-            whileHover={{ scale: 1.02 }}
-            whileTap={{ scale: 0.98 }}
-            onClick={toggleRelay}
-            className={`flex items-center gap-3 px-8 py-3 rounded-2xl font-black transition-all shadow-lg glow-shadow ${isRelayOn
-              ? "bg-red-500/20 text-red-500 border border-red-500/50 hover:bg-red-500/30"
-              : "bg-emerald-500/20 text-emerald-500 border border-emerald-500/50 hover:bg-emerald-500/30"
-              }`}
-          >
-            <Power size={20} />
-            {isRelayOn ? "SHUTDOWN NODE" : "ACTIVATE NODE"}
-          </motion.button>
+          {device && (
+            <button
+              onClick={handleControl}
+              disabled={refreshing}
+              className={`px-6 py-2.5 rounded-xl font-bold text-xs flex items-center gap-2 transition-all uppercase tracking-widest shadow-xl shadow-slate-200 ${device?.status === 'ON'
+                ? "bg-white text-red-600 border border-red-100 hover:bg-red-50"
+                : "bg-blue-600 text-white hover:bg-blue-700 shadow-blue-200"
+                }`}
+            >
+              <Power size={14} />
+              {device?.status === 'ON' ? 'Node Shutdown' : 'Activate Node'}
+            </button>
+          )}
         </div>
       </div>
 
-      {/* Alert Panel */}
-      <AlertPanel />
+      {/* Notifications Layer */}
+      <AnimatePresence>
+        {isFaulty && (
+          <motion.div
+            initial={{ opacity: 0, y: -10 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0 }}
+            className="p-4 bg-red-50 border border-red-100 rounded-xl flex items-center justify-between gap-3 text-red-600 mb-2"
+          >
+            <div className="flex items-center gap-3">
+              <div className="p-2 bg-red-100 rounded-lg">
+                <AlertTriangle size={18} />
+              </div>
+              <div>
+                <p className="text-sm font-bold uppercase tracking-wider">Critical Fault Detected</p>
+                <p className="text-[10px] font-medium opacity-80">Power consumption for #{selectedDeviceId} is outside nominal safety thresholds.</p>
+                <p className="text-[10px] font-medium opacity-80">
+                  Power ({telemetry?.power?.toFixed(1)}W) is outside configured range:{" "}
+                  {(device.baselineWatt - lowerOffset).toFixed(1)}W -{" "}
+                  {(device.baselineWatt + upperOffset).toFixed(1)}W
+                </p>
+              </div>
+            </div>
+            <div className="px-3 py-1 bg-red-600 text-white text-[10px] font-black rounded-md animate-pulse">CRITICAL</div>
+          </motion.div>
+        )}
 
-      {/* Hierarchy Selector */}
-      <section className="space-y-4">
-        <div className="flex items-center gap-2 text-gray-500 px-1">
-          <Search size={16} />
-          <span className="text-xs font-bold uppercase tracking-widest">Select Location Hierarchy</span>
-        </div>
-        <HierarchySelector onFeederSelect={setSelectedFeederId} />
-      </section>
+        {syncSuccess && (
+          <motion.div
+            initial={{ opacity: 0, y: -10 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0 }}
+            className="p-4 bg-emerald-50 border border-emerald-100 rounded-xl flex items-center gap-3 text-emerald-600 text-sm font-bold uppercase tracking-widest mb-2"
+          >
+            <CheckCircle2 size={18} />
+            Hardware Parameters Synchronized
+          </motion.div>
+        )}
+      </AnimatePresence>
 
-      {!selectedFeederId ? (
-        <div className="py-32 text-center glass-card border-dashed">
-          <Activity size={64} className="mx-auto text-gray-800 mb-6" />
-          <h3 className="text-2xl font-bold text-gray-500">No Feeder Selected</h3>
-          <p className="text-gray-600 mt-2">Please use the hierarchy selector above to view node data</p>
-        </div>
-      ) : (
+      {/* Selector and Main Content */}
+      <div className="grid grid-cols-1 gap-8">
+        <HierarchySelector onFeederSelect={setSelectedDeviceId} />
         <>
           {/* Main Stats Grid */}
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
@@ -182,99 +266,80 @@ export default function Dashboard() {
               alert={isFaulty}
             />
             <StatCard
-              title="Node Energy"
-              value={telemetry?.energy?.toFixed(3) || "0.000"}
-              unit="kWh"
+              title="Base Consumption"
+              value={device?.baselineWatt || "0"}
+              unit="W"
               icon={Battery}
               color="emerald"
             />
           </div>
 
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-            <div className="lg:col-span-2 glass-card p-6">
-              <div className="flex items-center justify-between mb-8">
-                <h3 className="text-xl font-bold text-white flex items-center gap-2 tracking-tight">
-                  <TrendingUp size={20} className="text-blue-500" />
-                  Historical Power Consumption
-                </h3>
+            <div className="lg:col-span-2 standard-card p-8 flex flex-col">
+              <div className="flex items-center gap-3 mb-8">
+                <div className="p-2 bg-blue-50 rounded-lg text-blue-600">
+                  <Cpu size={24} />
+                </div>
+                <h3 className="text-xl font-bold text-slate-900">Device Specifications</h3>
               </div>
 
-              <div className="h-[350px] w-full">
-                <ResponsiveContainer width="100%" height="100%">
-                  <AreaChart data={history}>
-                    <defs>
-                      <linearGradient id="colorPower" x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="5%" stopColor="#3b82f6" stopOpacity={0.3} />
-                        <stop offset="95%" stopColor="#3b82f6" stopOpacity={0} />
-                      </linearGradient>
-                    </defs>
-                    <CartesianGrid strokeDasharray="3 3" stroke="#ffffff05" vertical={false} />
-                    <XAxis
-                      dataKey="timestamp"
-                      tickFormatter={(time) => new Date(time).toLocaleDateString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
-                      stroke="#4b5563"
-                      fontSize={10}
-                    />
-                    <YAxis stroke="#4b5563" fontSize={10} />
-                    <Tooltip
-                      contentStyle={{ backgroundColor: '#030712', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '16px' }}
-                      itemStyle={{ color: '#3b82f6' }}
-                    />
-                    <Area
-                      type="monotone"
-                      dataKey="power"
-                      stroke="#3b82f6"
-                      strokeWidth={4}
-                      fillOpacity={1}
-                      fill="url(#colorPower)"
-                      animationDuration={1500}
-                    />
-                  </AreaChart>
-                </ResponsiveContainer>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                <InfoRow label="Device ID" value={device?.deviceId} />
+                <InfoRow label="Feeder ID" value={device?.feederId || "N/A"} />
+                <InfoRow label="Area Name" value={device?.area} />
+                <InfoRow label="Location" value={device?.landmark} />
+                <InfoRow label="Ward Number" value={device?.wardNo} />
+                <InfoRow label="Registration" value={device?.status} />
+                <InfoRow label="Lower Offset" value={`${(lowerOffset).toFixed(0)} W`} />
+                <InfoRow label="Upper Offset" value={`${(upperOffset).toFixed(0)} W`} />
               </div>
             </div>
 
-            <div className="glass-card p-6 flex flex-col">
-              <h3 className="text-xl font-bold text-white mb-6 flex items-center gap-2">
+            <div className="standard-card p-6 flex flex-col">
+              <h3 className="text-lg font-bold text-slate-900 mb-6 flex items-center gap-2">
                 <CheckCircle2 size={20} className="text-emerald-500" />
-                Node Integrity
+                Operational Status
               </h3>
 
-              <div className="space-y-6">
-                <div className="p-5 bg-white/5 rounded-2xl border border-white/10 relative overflow-hidden group">
-                  <div className="absolute top-0 right-0 p-3 opacity-10 group-hover:opacity-20 transition-opacity">
-                    <Activity size={48} />
-                  </div>
-                  <p className="text-[10px] text-gray-500 mb-1 font-black uppercase tracking-widest">Active Poles</p>
-                  <p className="text-3xl font-black text-white">20 / {feeder?.poleCount || 20}</p>
-                </div>
-
-                <div className="p-5 bg-white/5 rounded-2xl border border-white/10">
-                  <p className="text-[10px] text-gray-500 mb-1 font-black uppercase tracking-widest">Last Update Recieved</p>
-                  <p className="text-sm font-bold text-blue-400">
-                    {telemetry ? new Date(telemetry.timestamp).toLocaleString() : 'PENDING FETCH'}
+              <div className="space-y-4">
+                <div className="p-5 bg-slate-50 rounded-xl border border-slate-100">
+                  <p className="text-[10px] text-slate-400 mb-1 font-bold uppercase tracking-widest">Connectivity</p>
+                  <p className={`text-2xl font-bold ${telemetry ? 'text-emerald-600' : 'text-red-500'}`}>
+                    {telemetry ? 'ONLINE' : 'OFFLINE'}
                   </p>
                 </div>
 
-                <div className="flex-1 space-y-4">
-                  <p className="text-[10px] text-gray-500 font-black uppercase tracking-widest border-b border-white/5 pb-2">Transmission Log</p>
-                  <div className="space-y-3">
-                    {history.slice(-4).reverse().map((entry, i) => (
-                      <div key={i} className="flex items-center justify-between text-xs bg-white/5 p-3 rounded-xl">
-                        <div className="flex items-center gap-3">
-                          <div className={`w-2 h-2 rounded-full ${entry.relayState === 1 ? 'bg-emerald-500' : 'bg-gray-500'}`}></div>
-                          <span className="text-gray-400 font-medium">{new Date(entry.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
-                        </div>
-                        <span className="text-white font-black">{entry.power.toFixed(1)}W</span>
-                      </div>
-                    ))}
-                  </div>
+                <div className="p-5 bg-slate-50 rounded-xl border border-slate-100">
+                  <p className="text-[10px] text-slate-400 mb-1 font-bold uppercase tracking-widest">Last Update</p>
+                  <p className="text-sm font-semibold text-slate-700">
+                    {telemetry?.timestamp ? new Date(telemetry.timestamp).toLocaleString() : 'No Data'}
+                  </p>
+                </div>
+
+                <div className="p-5 bg-blue-50/50 rounded-xl border border-blue-100">
+                  <p className="text-[10px] text-blue-600 mb-2 font-bold uppercase tracking-widest">Deployment Info</p>
+                  <p className="text-xs text-slate-600 leading-relaxed">
+                    Commands sent to this node are acknowledged via MQTT. Current sync interval is 30s.
+                  </p>
                 </div>
               </div>
             </div>
           </div>
         </>
-      )}
+      </div>
+
+      <AddDeviceForm
+        isOpen={isAddFormOpen}
+        onClose={() => setIsAddFormOpen(false)}
+        onDeviceAdded={() => window.location.reload()}
+      />
     </div>
   );
 }
+
+const InfoRow = ({ label, value }) => (
+  <div className="flex flex-col pb-4 border-b border-slate-50">
+    <span className="text-slate-400 uppercase text-[10px] font-bold tracking-widest">{label}</span>
+    <span className="text-slate-900 font-semibold mt-1">{value || "---"}</span>
+  </div>
+);

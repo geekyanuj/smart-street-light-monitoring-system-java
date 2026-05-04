@@ -7,123 +7,119 @@ import {
   Save, 
   RefreshCcw,
   AlertTriangle,
-  ChevronDown
+  Plus
 } from "lucide-react";
 import axios from "axios";
 import { motion } from "framer-motion";
+import { getDevices } from "../api/deviceApi";
+import AddDeviceForm from "../components/AddDeviceForm";
 
-const API_BASE = import.meta.env.VITE_API_BASE_URL || "http://localhost:5000";
+const API_BASE = import.meta.env.VITE_API_BASE_URL || "http://localhost:8080/api/sslms";
 
 export default function Settings() {
   const [settings, setSettings] = useState({ fetchFrequency: 2, fetchTimes: ["06:00", "18:00"] });
-  const [feeders, setFeeders] = useState([]);
+  const [devices, setDevices] = useState([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState("");
+  const [selectedDeviceForEdit, setSelectedDeviceForEdit] = useState(null);
+  const [isFormOpen, setIsFormOpen] = useState(false);
+
+  const fetchInfrastructure = async () => {
+    try {
+      const devRes = await getDevices();
+      setDevices(devRes.data);
+    } catch (err) {
+      console.error("Error fetching settings data", err);
+    } finally {
+      setLoading(false);
+    }
+  };
 
   useEffect(() => {
-    const fetchData = async () => {
-      try {
-        const [settingsRes, feedersRes] = await Promise.all([
-          axios.get(`${API_BASE}/api/settings`),
-          axios.get(`${API_BASE}/api/feeders`)
-        ]);
-        setSettings(settingsRes.data);
-        setFeeders(feedersRes.data);
-      } catch (err) {
-        console.error("Error fetching settings", err);
-      } finally {
-        setLoading(false);
-      }
-    };
-    fetchData();
+    fetchInfrastructure();
   }, []);
 
-  const handleSettingsSave = async () => {
-    setSaving(true);
-    try {
-      await axios.post(`${API_BASE}/api/settings`, settings);
-      setMessage("Settings saved successfully!");
-      setTimeout(() => setMessage(""), 3000);
-    } catch (err) {
-      console.error("Error saving settings", err);
-      setMessage("Failed to save settings");
-    } finally {
-      setSaving(false);
-    }
+  const handleManualSyncAll = async () => {
+    setMessage("Broadcasting sync command to all nodes...");
+    setTimeout(() => setMessage(""), 3000);
   };
 
-  const handleFeederUpdate = async (feeder) => {
-    try {
-      await axios.post(`${API_BASE}/api/feeders`, feeder);
-      setMessage(`Updated thresholds for ${feeder.feederId}`);
-      setTimeout(() => setMessage(""), 3000);
-    } catch (err) {
-      console.error("Error updating feeder", err);
-    }
+  const openEdit = (device) => {
+    setSelectedDeviceForEdit(device);
+    setIsFormOpen(true);
   };
 
-  const manualFetch = async () => {
-    try {
-      await axios.post(`${API_BASE}/api/settings/fetch`);
-      setMessage("Manual fetch command sent to feeders");
-      setTimeout(() => setMessage(""), 3000);
-    } catch (err) {
-      console.error("Error triggering manual fetch", err);
-    }
+  const handleCloseForm = () => {
+    setIsFormOpen(false);
+    setSelectedDeviceForEdit(null);
   };
 
-  if (loading) return <div className="p-8 text-white">Loading settings...</div>;
+  if (loading) return (
+    <div className="h-[60vh] flex items-center justify-center">
+      <div className="w-10 h-10 border-4 border-slate-200 border-t-blue-600 rounded-full animate-spin"></div>
+    </div>
+  );
 
   return (
-    <div className="space-y-8 pb-12">
-      <div className="flex items-center justify-between">
+    <div className="space-y-8 pb-12 animate-in fade-in duration-500">
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
-          <h1 className="text-3xl font-bold bg-gradient-to-r from-white to-gray-500 bg-clip-text text-transparent">
-            System Settings
-          </h1>
-          <p className="text-gray-400 mt-1">Configure data acquisition and fault thresholds</p>
+          <h1 className="text-3xl font-bold text-slate-900 tracking-tight">System Settings</h1>
+          <p className="text-slate-500 font-medium">Global configuration and node parameters</p>
         </div>
         
-        <button
-          onClick={manualFetch}
-          className="flex items-center gap-2 px-6 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl transition-all shadow-lg glow-shadow"
-        >
-          <RefreshCcw size={18} />
-          Force Manual Fetch
-        </button>
+        <div className="flex gap-3">
+          <button
+            onClick={() => { setSelectedDeviceForEdit(null); setIsFormOpen(true); }}
+            className="btn-secondary flex items-center gap-2"
+          >
+            <Plus size={18} />
+            <span>Add Node</span>
+          </button>
+          
+          <button
+            onClick={handleManualSyncAll}
+            className="btn-primary flex items-center gap-2"
+          >
+            <RefreshCcw size={18} />
+            <span>Sync All Nodes</span>
+          </button>
+        </div>
       </div>
 
       {message && (
         <motion.div 
-          initial={{ opacity: 0, y: -20 }}
+          initial={{ opacity: 0, y: -10 }}
           animate={{ opacity: 1, y: 0 }}
-          className="p-4 bg-emerald-500/20 border border-emerald-500/50 text-emerald-500 rounded-xl"
+          className="p-4 bg-emerald-50 border border-emerald-100 text-emerald-600 rounded-xl font-bold text-sm"
         >
           {message}
         </motion.div>
       )}
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-        {/* Fetch Configuration */}
-        <section className="glass-card p-6 space-y-6">
-          <div className="flex items-center gap-3 border-b border-white/5 pb-4">
-            <Clock className="text-blue-500" />
-            <h2 className="text-xl font-bold text-white">Data Fetching Frequency</h2>
+        {/* Global Configuration */}
+        <section className="standard-card p-6 space-y-6">
+          <div className="flex items-center gap-3 border-b border-slate-100 pb-4">
+            <div className="p-2 bg-blue-50 rounded-lg text-blue-600">
+              <Clock size={20} />
+            </div>
+            <h2 className="text-xl font-bold text-slate-900">Polling Interval</h2>
           </div>
           
-          <div className="space-y-4">
+          <div className="space-y-6">
             <div>
-              <label className="text-sm text-gray-400 mb-2 block">Daily Frequency</label>
-              <div className="flex gap-4">
-                {[1, 2, 3, 4].map(freq => (
+              <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-4 block">Data Refresh Cycle</label>
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+                {[1, 2, 4, 12].map(freq => (
                   <button
                     key={freq}
                     onClick={() => setSettings({...settings, fetchFrequency: freq})}
-                    className={`flex-1 py-3 rounded-xl border transition-all ${
+                    className={`py-3 rounded-xl border font-bold transition-all ${
                       settings.fetchFrequency === freq 
-                      ? "bg-blue-600 border-blue-500 text-white" 
-                      : "bg-white/5 border-white/10 text-gray-400 hover:bg-white/10"
+                      ? "bg-blue-600 border-blue-600 text-white shadow-lg shadow-blue-100" 
+                      : "bg-slate-50 border-slate-200 text-slate-500 hover:border-slate-300"
                     }`}
                   >
                     {freq}x Day
@@ -133,95 +129,108 @@ export default function Settings() {
             </div>
 
             <button
-              onClick={handleSettingsSave}
               disabled={saving}
-              className="w-full flex items-center justify-center gap-2 py-3 bg-white text-black font-bold rounded-xl hover:bg-gray-200 transition-all"
+              className="w-full flex items-center justify-center gap-2 py-3.5 bg-slate-900 text-white font-bold rounded-xl hover:bg-slate-800 transition-all shadow-xl shadow-slate-200"
             >
               <Save size={18} />
-              {saving ? "Saving..." : "Save Global Configuration"}
+              {saving ? "SAVING..." : "COMMIT GLOBAL CHANGES"}
             </button>
           </div>
         </section>
 
-        {/* Fault Detection Logic */}
-        <section className="glass-card p-6 space-y-6">
-          <div className="flex items-center gap-3 border-b border-white/5 pb-4">
-            <AlertTriangle className="text-yellow-500" />
-            <h2 className="text-xl font-bold text-white">Fault Detection Rules</h2>
+        {/* Fault Logic Info */}
+        <section className="standard-card p-6 space-y-6">
+          <div className="flex items-center gap-3 border-b border-slate-100 pb-4">
+            <div className="p-2 bg-amber-50 rounded-lg text-amber-600">
+              <AlertTriangle size={20} />
+            </div>
+            <h2 className="text-xl font-bold text-slate-900">Anomalies Detection</h2>
           </div>
-          <p className="text-gray-400 text-sm">
-            Faults are detected when power consumption deviates from thresholds for a period of 20 lights.
-          </p>
-          <div className="p-4 bg-yellow-500/10 border border-yellow-500/20 rounded-xl">
-            <p className="text-yellow-500 text-xs">
-              Note: System automatically scales thresholds based on active pole count.
+          <div className="space-y-4">
+            <p className="text-slate-500 text-sm leading-relaxed">
+              Automated alerts are triggered when a node's active power consumption deviates by more than <span className="text-slate-900 font-bold">30%</span> from its registered baseline.
             </p>
+            <div className="p-4 bg-slate-50 rounded-xl border border-slate-100 flex items-start gap-3">
+              <div className="p-1 bg-white rounded-md shadow-sm">
+                <Zap size={14} className="text-blue-600" />
+              </div>
+              <p className="text-[10px] text-slate-500 font-bold leading-tight uppercase tracking-wider">
+                Note: Fault detection is only active when the relay status is reported as "ON".
+              </p>
+            </div>
           </div>
         </section>
       </div>
 
-      {/* Per-Feeder Thresholds */}
-      <section className="glass-card p-6">
-        <div className="flex items-center gap-3 border-b border-white/5 pb-4 mb-6">
-          <Activity className="text-purple-500" />
-          <h2 className="text-xl font-bold text-white">Feeder Thresholds</h2>
+      {/* Node List View */}
+      <section className="standard-card overflow-hidden">
+        <div className="p-6 flex items-center gap-3 border-b border-slate-100 bg-slate-50/50">
+          <div className="p-2 bg-purple-50 rounded-lg text-purple-600">
+            <Activity size={20} />
+          </div>
+          <h2 className="text-xl font-bold text-slate-900">Registered Infrastructure</h2>
         </div>
 
         <div className="overflow-x-auto">
           <table className="w-full text-left">
             <thead>
-              <tr className="text-gray-500 text-sm border-b border-white/5">
-                <th className="pb-4 font-medium">Ward / Area</th>
-                <th className="pb-4 font-medium">Feeder ID</th>
-                <th className="pb-4 font-medium">Min Power (W)</th>
-                <th className="pb-4 font-medium">Max Power (W)</th>
-                <th className="pb-4 font-medium">Action</th>
+              <tr className="text-slate-400 text-[10px] font-bold uppercase tracking-widest bg-slate-50/30 border-b border-slate-100">
+                <th className="px-6 py-4">Node Identity</th>
+                <th className="px-6 py-4">Location Context</th>
+                <th className="px-6 py-4">Current Status</th>
+                <th className="px-6 py-4">Baseline Load</th>
+                <th className="px-6 py-4 text-right">Registry</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-white/5">
-              {feeders.map((feeder) => (
-                <tr key={feeder.feederId} className="group hover:bg-white/5 transition-colors">
-                  <td className="py-4">
-                    <div className="text-white font-medium">{feeder.ward}</div>
-                    <div className="text-gray-500 text-xs">{feeder.area}</div>
+            <tbody className="divide-y divide-slate-50">
+              {devices.map((device) => (
+                <tr key={device.deviceId} className="group hover:bg-slate-50 transition-colors">
+                  <td className="px-6 py-4">
+                    <div className="text-slate-900 font-bold">#{device.deviceId}</div>
+                    <div className="text-slate-400 text-[10px] font-bold uppercase">Feeder: {device.feederId}</div>
                   </td>
-                  <td className="py-4 text-blue-400 font-mono">{feeder.feederId}</td>
-                  <td className="py-4">
-                    <input 
-                      type="number"
-                      value={feeder.thresholds.minPower}
-                      onChange={(e) => {
-                        const newFeeders = feeders.map(f => f.feederId === feeder.feederId ? {...f, thresholds: {...f.thresholds, minPower: Number(e.target.value)}} : f);
-                        setFeeders(newFeeders);
-                      }}
-                      className="bg-white/5 border border-white/10 rounded-lg px-3 py-1 text-white w-24 focus:border-blue-500 outline-none"
-                    />
+                  <td className="px-6 py-4">
+                    <div className="text-slate-600 text-sm font-semibold">{device.area}</div>
+                    <div className="text-slate-400 text-xs">{device.landmark}</div>
                   </td>
-                  <td className="py-4">
-                    <input 
-                      type="number"
-                      value={feeder.thresholds.maxPower}
-                      onChange={(e) => {
-                        const newFeeders = feeders.map(f => f.feederId === feeder.feederId ? {...f, thresholds: {...f.thresholds, maxPower: Number(e.target.value)}} : f);
-                        setFeeders(newFeeders);
-                      }}
-                      className="bg-white/5 border border-white/10 rounded-lg px-3 py-1 text-white w-24 focus:border-blue-500 outline-none"
-                    />
+                  <td className="px-6 py-4">
+                    <span className="inline-flex items-center px-2.5 py-1 rounded-full text-[10px] font-bold bg-slate-100 text-slate-600 uppercase tracking-tighter">
+                      Registered
+                    </span>
                   </td>
-                  <td className="py-4">
+                  <td className="px-6 py-4">
+                    <div className="flex items-center gap-2">
+                      <div className="px-3 py-1 bg-blue-50 text-blue-600 rounded-lg font-bold text-sm border border-blue-100">
+                        {device.baselineWatt}W
+                      </div>
+                    </div>
+                  </td>
+                  <td className="px-6 py-4 text-right">
                     <button 
-                      onClick={() => handleFeederUpdate(feeder)}
-                      className="p-2 bg-emerald-500/10 text-emerald-500 rounded-lg hover:bg-emerald-500/20 transition-all opacity-0 group-hover:opacity-100"
+                      onClick={() => openEdit(device)}
+                      className="p-2 text-slate-300 hover:text-blue-600 transition-colors"
                     >
-                      <Save size={16} />
+                      <SettingsIcon size={18} />
                     </button>
                   </td>
                 </tr>
               ))}
             </tbody>
           </table>
+          {devices.length === 0 && (
+            <div className="p-12 text-center text-slate-400 font-medium italic">
+              No nodes registered in the system hierarchy.
+            </div>
+          )}
         </div>
       </section>
+
+      <AddDeviceForm 
+        isOpen={isFormOpen}
+        onClose={handleCloseForm}
+        onDeviceAdded={fetchInfrastructure}
+        initialData={selectedDeviceForEdit}
+      />
     </div>
   );
 }

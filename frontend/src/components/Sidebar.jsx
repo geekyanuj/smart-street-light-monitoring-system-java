@@ -21,7 +21,7 @@ const MenuItem = ({ to, icon: Icon, label, end = false }) => (
   </NavLink>
 );
 
-export default function Sidebar() {
+export default function Sidebar({ onClose }) {
   const navigate = useNavigate();
   
   const handleLogout = () => {
@@ -31,34 +31,34 @@ export default function Sidebar() {
   };
 
   return (
-    <aside className="h-screen w-72 bg-black/40 backdrop-blur-xl border-r border-white/5 text-white flex flex-col z-50">
+    <aside className="h-screen w-72 bg-white border-r border-slate-200 text-slate-900 flex flex-col z-50">
       <div className="p-8 flex items-center gap-3">
-        <div className="p-2 bg-blue-600 rounded-xl glow-shadow">
+        <div className="p-2 bg-blue-600 rounded-lg">
           <Lightbulb size={24} className="text-white" />
         </div>
         <div>
-          <h1 className="text-xl font-bold tracking-tight">SSLMS</h1>
-          <p className="text-[10px] text-blue-500 font-bold uppercase tracking-widest">Smart Control</p>
+          <h1 className="text-xl font-bold tracking-tight text-slate-900">SSLMS</h1>
+          <p className="text-[10px] text-blue-600 font-bold uppercase tracking-widest">Smart Control</p>
         </div>
       </div>
 
-      <nav className="flex-1 px-4 py-6 space-y-2">
-        <div className="text-[10px] font-bold text-gray-500 uppercase tracking-widest px-4 mb-4">Menu</div>
-        <MenuItem to="/" icon={LayoutDashboard} label="Dashboard" end />
-        <MenuItem to="/map" icon={MapIcon} label="Geospatial Map" />
-        <MenuItem to="/analytics" icon={BarChart3} label="Analytics" />
-        <MenuItem to="/live" icon={Radio} label="Telemetry Logs" />
+      <nav className="flex-1 px-4 py-6 space-y-1">
+        <div className="text-[10px] font-bold text-slate-400 uppercase tracking-widest px-4 mb-4">Menu</div>
+        <div onClick={onClose}><MenuItem to="/" icon={LayoutDashboard} label="Dashboard" end /></div>
+        <div onClick={onClose}><MenuItem to="/map" icon={MapIcon} label="Geospatial Map" /></div>
+        <div onClick={onClose}><MenuItem to="/analytics" icon={BarChart3} label="Analytics" /></div>
+        <div onClick={onClose}><MenuItem to="/live" icon={Radio} label="Telemetry Logs" /></div>
         
         <div className="pt-8">
-          <div className="text-[10px] font-bold text-gray-500 uppercase tracking-widest px-4 mb-4">Configuration</div>
-          <MenuItem to="/settings" icon={Settings} label="System Settings" />
+          <div className="text-[10px] font-bold text-slate-400 uppercase tracking-widest px-4 mb-4">Configuration</div>
+          <div onClick={onClose}><MenuItem to="/settings" icon={Settings} label="System Settings" /></div>
         </div>
       </nav>
 
-      <div className="p-4 border-t border-white/5">
+      <div className="p-4 border-t border-slate-100">
         <button 
           onClick={handleLogout}
-          className="w-full flex items-center gap-3 px-4 py-3 rounded-xl text-red-400 hover:bg-red-500/10 transition-all duration-300"
+          className="w-full flex items-center gap-3 px-4 py-3 rounded-lg text-slate-500 hover:text-red-600 hover:bg-red-50 transition-all"
         >
           <LogOut size={20} />
           <span className="font-medium">Sign Out</span>

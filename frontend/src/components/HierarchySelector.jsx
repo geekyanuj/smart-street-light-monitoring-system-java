@@ -1,9 +1,7 @@
 import { useState, useEffect } from "react";
-import axios from "axios";
+import { getDevices } from "../api/deviceApi";
 import { ChevronRight, MapPin, Grid, Layers } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
-
-const API_BASE = import.meta.env.VITE_API_BASE_URL || "http://localhost:5000";
 
 export default function HierarchySelector({ onFeederSelect }) {
   const [hierarchy, setHierarchy] = useState({});
@@ -13,35 +11,59 @@ export default function HierarchySelector({ onFeederSelect }) {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const fetchHierarchy = async () => {
+    const fetchAndBuildHierarchy = async () => {
       try {
-        const res = await axios.get(`${API_BASE}/api/feeders/hierarchy`);
-        setHierarchy(res.data);
-        const firstWard = Object.keys(res.data)[0];
-        if (firstWard) {
+        const res = await getDevices();
+        const devices = res.data;
+        
+        // Build hierarchy: Ward -> Area -> FeederIds
+        const tree = {};
+        devices.forEach(device => {
+          const ward = `Ward ${device.wardNo || 'Unknown'}`;
+          const area = device.area || 'Unknown Area';
+          const feeder = device.feederId || device.deviceId;
+
+          if (!tree[ward]) tree[ward] = {};
+          if (!tree[ward][area]) tree[ward][area] = [];
+          if (!tree[ward][area].includes(feeder)) {
+            tree[ward][area].push(feeder);
+          }
+        });
+
+        setHierarchy(tree);
+        
+        // Auto-select first available
+        const wards = Object.keys(tree);
+        if (wards.length > 0) {
+          const firstWard = wards[0];
           setSelectedWard(firstWard);
-          const firstArea = Object.keys(res.data[firstWard])[0];
-          if (firstArea) {
+          
+          const areas = Object.keys(tree[firstWard]);
+          if (areas.length > 0) {
+            const firstArea = areas[0];
             setSelectedArea(firstArea);
-            const firstFeeder = res.data[firstWard][firstArea][0];
-            if (firstFeeder) {
+            
+            const feeders = tree[firstWard][firstArea];
+            if (feeders.length > 0) {
+              const firstFeeder = feeders[0];
               setSelectedFeeder(firstFeeder);
               onFeederSelect(firstFeeder);
             }
           }
         }
       } catch (err) {
-        console.error("Error fetching hierarchy", err);
+        console.error("Error building hierarchy", err);
       } finally {
         setLoading(false);
       }
     };
-    fetchHierarchy();
-  }, []);
+    fetchAndBuildHierarchy();
+  }, [onFeederSelect]);
 
   const handleWardChange = (ward) => {
     setSelectedWard(ward);
-    const firstArea = Object.keys(hierarchy[ward])[0];
+    const areas = Object.keys(hierarchy[ward]);
+    const firstArea = areas[0];
     setSelectedArea(firstArea);
     const firstFeeder = hierarchy[ward][firstArea][0];
     setSelectedFeeder(firstFeeder);
@@ -60,52 +82,62 @@ export default function HierarchySelector({ onFeederSelect }) {
     onFeederSelect(feeder);
   };
 
-  if (loading) return <div className="animate-pulse h-10 bg-white/5 rounded-xl"></div>;
+  if (loading) return (
+    <div className="flex gap-4">
+      {[1, 2, 3].map(i => (
+        <div key={i} className="h-10 w-32 bg-slate-200 animate-pulse rounded-lg"></div>
+      ))}
+    </div>
+  );
+
+  if (Object.keys(hierarchy).length === 0) {
+    return <div className="text-slate-500 text-sm font-medium p-4 bg-slate-50 rounded-xl border border-slate-200">No devices found. Add a device to see the hierarchy.</div>;
+  }
 
   return (
-    <div className="flex flex-wrap items-center gap-4 bg-white/5 p-4 rounded-2xl border border-white/10 backdrop-blur-sm">
+    <div className="flex flex-wrap items-center gap-4 bg-white p-2 rounded-xl border border-slate-200 shadow-sm">
       {/* Ward Selection */}
-      <div className="flex items-center gap-2 px-3 py-2 bg-blue-500/10 rounded-xl border border-blue-500/20">
-        <Layers size={16} className="text-blue-400" />
+      <div className="flex items-center gap-2 px-4 py-2 bg-slate-50 rounded-lg border border-slate-100 group hover:border-blue-200 transition-colors">
+        <Layers size={14} className="text-slate-400 group-hover:text-blue-500" />
         <select 
           value={selectedWard || ""} 
           onChange={(e) => handleWardChange(e.target.value)}
-          className="bg-transparent text-sm font-semibold text-white focus:outline-none"
+          className="bg-transparent text-sm font-bold text-slate-700 focus:outline-none cursor-pointer pr-4"
         >
           {Object.keys(hierarchy).map(ward => (
-            <option key={ward} value={ward} className="bg-gray-900">{ward}</option>
+            <option key={ward} value={ward}>{ward}</option>
           ))}
         </select>
       </div>
 
-      <ChevronRight size={20} className="text-gray-600" />
+      <ChevronRight size={16} className="text-slate-300" />
 
       {/* Area Selection */}
-      <div className="flex items-center gap-2 px-3 py-2 bg-purple-500/10 rounded-xl border border-purple-500/20">
-        <Grid size={16} className="text-purple-400" />
+      <div className="flex items-center gap-2 px-4 py-2 bg-slate-50 rounded-lg border border-slate-100 group hover:border-purple-200 transition-colors">
+        <Grid size={14} className="text-slate-400 group-hover:text-purple-500" />
         <select 
           value={selectedArea || ""} 
           onChange={(e) => handleAreaChange(e.target.value)}
-          className="bg-transparent text-sm font-semibold text-white focus:outline-none"
+          className="bg-transparent text-sm font-bold text-slate-700 focus:outline-none cursor-pointer pr-4"
         >
           {selectedWard && Object.keys(hierarchy[selectedWard]).map(area => (
-            <option key={area} value={area} className="bg-gray-900">{area}</option>
+            <option key={area} value={area}>{area}</option>
           ))}
         </select>
       </div>
 
-      <ChevronRight size={20} className="text-gray-600" />
+      <ChevronRight size={16} className="text-slate-300" />
 
       {/* Feeder/Pole Selection */}
-      <div className="flex items-center gap-2 px-3 py-2 bg-emerald-500/10 rounded-xl border border-emerald-500/20">
-        <MapPin size={16} className="text-emerald-400" />
+      <div className="flex items-center gap-2 px-4 py-2 bg-slate-50 rounded-lg border border-slate-100 group hover:border-emerald-200 transition-colors">
+        <MapPin size={14} className="text-slate-400 group-hover:text-emerald-500" />
         <select 
           value={selectedFeeder || ""} 
           onChange={(e) => handleFeederChange(e.target.value)}
-          className="bg-transparent text-sm font-semibold text-white focus:outline-none"
+          className="bg-transparent text-sm font-bold text-slate-700 focus:outline-none cursor-pointer pr-4"
         >
           {selectedArea && hierarchy[selectedWard][selectedArea].map(feeder => (
-            <option key={feeder} value={feeder} className="bg-gray-900">Pole/Feeder: {feeder}</option>
+            <option key={feeder} value={feeder}>ID: {feeder}</option>
           ))}
         </select>
       </div>

@@ -1,18 +1,19 @@
 import { useState, useEffect } from "react";
 import { MapContainer, TileLayer, Marker, Popup } from "react-leaflet";
 import "leaflet/dist/leaflet.css";
-import axios from "axios";
 import { 
   Zap, 
-  Clock, 
   MapPin, 
   Activity, 
   AlertTriangle,
-  ExternalLink
+  ExternalLink,
+  Navigation
 } from "lucide-react";
 import L from "leaflet";
+import { getDevices, getLatestTelemetry } from "../api/deviceApi";
 
-const API_BASE = import.meta.env.VITE_API_BASE_URL || "http://localhost:5000";
+// Dhanbad Center
+const DHANBAD_CENTER = [23.7957, 86.4304];
 
 // Custom Marker Icons
 const createIcon = (color) => new L.Icon({
@@ -28,28 +29,42 @@ const blueIcon = createIcon('blue');
 const goldIcon = createIcon('gold');
 const redIcon = createIcon('red');
 
+// Helper to generate a consistent simulated coordinate for devices without GPS
+// This spreads them slightly around Dhanbad center based on their ID
+const getSimulatedCoords = (deviceId, area) => {
+    // Hash function to get consistent offset
+    let hash = 0;
+    for (let i = 0; i < deviceId.length; i++) {
+        hash = deviceId.charCodeAt(i) + ((hash << 5) - hash);
+    }
+    const latOffset = (hash % 100) / 2000; // Small spread
+    const lngOffset = ((hash >> 8) % 100) / 2000;
+    
+    return [DHANBAD_CENTER[0] + latOffset, DHANBAD_CENTER[1] + lngOffset];
+};
+
 export default function MapView() {
-  const [feeders, setFeeders] = useState([]);
+  const [devices, setDevices] = useState([]);
   const [telemetryMap, setTelemetryMap] = useState({});
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     const fetchData = async () => {
       try {
-        const feedersRes = await axios.get(`${API_BASE}/api/feeders`);
-        const feedersData = feedersRes.data;
-        setFeeders(feedersData);
+        const devRes = await getDevices();
+        const devData = devRes.data;
+        setDevices(devData);
 
-        // Fetch latest telemetry for each feeder
-        const telemetryPromises = feedersData.map(f => 
-          axios.get(`${API_BASE}/api/telemetry/latest?feederId=${f.feederId}`)
+        // Fetch latest telemetry for each device
+        const telemetryPromises = devData.map(d => 
+          getLatestTelemetry(d.deviceId).catch(() => ({ data: null }))
         );
         const telemetryResults = await Promise.all(telemetryPromises);
         
         const tMap = {};
         telemetryResults.forEach((res, idx) => {
           if (res.data) {
-            tMap[feedersData[idx].feederId] = res.data;
+            tMap[devData[idx].deviceId] = res.data;
           }
         });
         setTelemetryMap(tMap);
@@ -62,89 +77,104 @@ export default function MapView() {
     fetchData();
   }, []);
 
-  if (loading) return <div className="p-8 text-white">Loading map...</div>;
+  if (loading) return (
+    <div className="h-[80vh] flex flex-col items-center justify-center space-y-4">
+        <div className="w-10 h-10 border-4 border-slate-200 border-t-blue-600 rounded-full animate-spin"></div>
+        <p className="text-slate-400 font-bold tracking-widest text-xs">INITIALIZING MAP...</p>
+    </div>
+  );
 
   return (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between">
+    <div className="space-y-6 animate-in fade-in duration-500">
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
-          <h1 className="text-3xl font-bold bg-gradient-to-r from-white to-gray-500 bg-clip-text text-transparent">
+          <h1 className="text-3xl font-bold text-slate-900 tracking-tight">
             Geospatial Overview
           </h1>
-          <p className="text-gray-400 mt-1">Real-time location and status of feeder nodes</p>
+          <p className="text-slate-500 mt-1 flex items-center gap-2 text-sm">
+            <Navigation size={14} className="text-blue-500" />
+            Monitoring Dhanbad Municipal Area
+          </p>
         </div>
         
-        <div className="flex gap-4">
-           <div className="flex items-center gap-2 text-xs text-gray-400">
-             <div className="w-3 h-3 rounded-full bg-blue-500"></div> Active
+        <div className="flex gap-6 p-4 bg-white rounded-xl border border-slate-200 shadow-sm">
+           <div className="flex items-center gap-2 text-[10px] font-bold text-slate-500 uppercase tracking-widest">
+             <div className="w-3 h-3 rounded-full bg-blue-500"></div> Nominal
            </div>
-           <div className="flex items-center gap-2 text-xs text-gray-400">
+           <div className="flex items-center gap-2 text-[10px] font-bold text-slate-500 uppercase tracking-widest">
              <div className="w-3 h-3 rounded-full bg-red-500"></div> Fault
+           </div>
+           <div className="flex items-center gap-2 text-[10px] font-bold text-slate-500 uppercase tracking-widest">
+             <div className="w-3 h-3 rounded-full bg-yellow-500"></div> Offline
            </div>
         </div>
       </div>
 
-      <div className="glass-card overflow-hidden h-[70vh] relative z-0">
-        <MapContainer center={[23.785, 86.435]} zoom={14} className="h-full w-full">
+      <div className="standard-card overflow-hidden h-[70vh] relative z-0">
+        <MapContainer center={DHANBAD_CENTER} zoom={14} className="h-full w-full">
           <TileLayer
             url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
             attribution='&copy; OpenStreetMap contributors'
           />
 
-          {feeders.map((f) => {
-            const tel = telemetryMap[f.feederId];
-            const isFaulty = tel && (tel.power < f.thresholds.minPower || tel.power > f.thresholds.maxPower);
+          {devices.map((d) => {
+            const tel = telemetryMap[d.deviceId];
+            const isFaulty = tel && (tel.power > d.baselineWatt * 1.3 || (tel.power < d.baselineWatt * 0.7 && tel.power > 5));
             const icon = isFaulty ? redIcon : (tel ? blueIcon : goldIcon);
+            
+            const position = (d.latitude && d.longitude) 
+                ? [d.latitude, d.longitude] 
+                : getSimulatedCoords(d.deviceId, d.area);
 
             return (
-              <Marker key={f.feederId} position={[f.location.lat, f.location.lng]} icon={icon}>
+              <Marker key={d.deviceId} position={position} icon={icon}>
                 <Popup className="custom-popup">
-                  <div className="p-2 min-w-[200px]">
-                    <div className="flex items-center justify-between mb-3">
-                      <span className="text-xs font-bold text-blue-600 uppercase">Feeder Node</span>
-                      <span className="text-lg font-bold">#{f.feederId}</span>
+                  <div className="p-4 min-w-[240px] bg-white text-slate-900 rounded-xl shadow-xl border border-slate-100">
+                    <div className="flex items-center justify-between mb-4 pb-2 border-b border-slate-100">
+                      <span className="text-[10px] font-bold text-blue-600 uppercase tracking-widest">Street Node</span>
+                      <span className="text-sm font-bold">#{d.deviceId}</span>
                     </div>
                     
-                    <div className="space-y-2 mb-4">
-                      <div className="flex items-center gap-2 text-gray-600">
-                        <MapPin size={14} />
-                        <span className="text-xs">{f.ward}, {f.area}</span>
+                    <div className="space-y-3 mb-4">
+                      <div className="flex items-start gap-2 text-slate-600">
+                        <MapPin size={14} className="text-slate-400 mt-0.5" />
+                        <span className="text-xs font-semibold">{d.landmark}, {d.area}</span>
                       </div>
-                      <div className="flex items-center gap-2 text-gray-600">
-                        <Activity size={14} />
-                        <span className="text-xs">{f.poleCount} Poles Connected</span>
+                      <div className="flex items-center gap-2 text-slate-600">
+                        <Activity size={14} className="text-slate-400" />
+                        <span className="text-xs font-semibold">Ward No: {d.wardNo}</span>
                       </div>
                     </div>
 
                     {tel ? (
-                      <div className="bg-gray-50 p-3 rounded-xl space-y-2 border border-gray-100">
-                        <div className="flex justify-between text-xs">
-                          <span className="text-gray-500 font-medium">Power consumption</span>
-                          <span className="font-bold text-gray-900">{tel.power.toFixed(1)} W</span>
+                      <div className="bg-slate-50 p-4 rounded-lg space-y-3 border border-slate-100">
+                        <div className="flex justify-between items-center">
+                          <span className="text-[10px] text-slate-500 font-bold uppercase tracking-widest">Power</span>
+                          <span className="text-sm font-bold text-slate-900">{tel.power.toFixed(1)} W</span>
                         </div>
-                        <div className="flex justify-between text-xs">
-                          <span className="text-gray-500 font-medium">Last update</span>
-                          <span className="text-blue-600 font-semibold">{new Date(tel.timestamp).toLocaleTimeString()}</span>
+                        <div className="flex justify-between items-center">
+                          <span className="text-[10px] text-slate-500 font-bold uppercase tracking-widest">Voltage</span>
+                          <span className="text-sm font-bold text-slate-900">{tel.voltage.toFixed(1)} V</span>
                         </div>
                         {isFaulty && (
-                          <div className="pt-1 flex items-center gap-1 text-[10px] text-red-500 font-bold uppercase">
-                            <AlertTriangle size={10} />
-                            Threshold Violation
+                          <div className="pt-2 flex items-center gap-2 text-[10px] text-red-600 font-bold uppercase tracking-widest">
+                            <AlertTriangle size={12} />
+                            Critical Fault
                           </div>
                         )}
                       </div>
                     ) : (
-                      <div className="text-center py-4 text-gray-400 text-xs bg-gray-50 rounded-xl">
-                        Waiting for telemetry data...
+                      <div className="text-center py-6 text-slate-400 text-[10px] font-bold uppercase tracking-widest bg-slate-50 rounded-lg border border-dashed border-slate-200">
+                        No Telemetry Data
                       </div>
                     )}
 
                     <button 
-                      className="w-full mt-4 py-2 bg-blue-600 text-white rounded-lg text-xs font-bold flex items-center justify-center gap-2 hover:bg-blue-700 transition-all"
-                      onClick={() => window.location.href = `/?feederId=${f.feederId}`}
+                      className="w-full mt-4 btn-primary py-2.5 flex items-center justify-center gap-2 text-xs"
+                      onClick={() => window.location.href = `/?deviceId=${d.deviceId}`}
                     >
-                      <ExternalLink size={12} />
-                      View Full Details
+                      <ExternalLink size={14} />
+                      CONTROL NODE
                     </button>
                   </div>
                 </Popup>

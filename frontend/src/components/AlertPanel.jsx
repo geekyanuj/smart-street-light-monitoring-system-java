@@ -1,9 +1,7 @@
 import { useEffect, useState } from "react";
-import { AlertCircle, Bell, ChevronRight, AlertTriangle } from "lucide-react";
-import axios from "axios";
+import { AlertTriangle, Bell, Info } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
-
-const API_BASE = import.meta.env.VITE_API_BASE_URL || "http://localhost:5000";
+import { getDevices, getLatestTelemetry } from "../api/deviceApi";
 
 export default function AlertPanel() {
   const [alerts, setAlerts] = useState([]);
@@ -11,29 +9,34 @@ export default function AlertPanel() {
 
   const fetchAlerts = async () => {
     try {
-      // Logic: A fault is an anomaly in power consumption
-      // For this panel, we'll fetch latest telemetry for all feeders and check thresholds
-      const feedersRes = await axios.get(`${API_BASE}/api/feeders`);
-      const feeders = feedersRes.data;
+      const devRes = await getDevices();
+      const devices = devRes.data;
 
       const alertList = [];
 
-      for (const feeder of feeders) {
-        const telRes = await axios.get(`${API_BASE}/api/telemetry/latest?feederId=${feeder.feederId}`);
-        const tel = telRes.data;
+      for (const device of devices) {
+        try {
+          const telRes = await getLatestTelemetry(device.deviceId);
+          const tel = telRes.data;
 
-        if (tel && tel.relayState === 1) {
-          if (tel.power < feeder.thresholds.minPower || tel.power > feeder.thresholds.maxPower) {
-            alertList.push({
-              feederId: feeder.feederId,
-              ward: feeder.ward,
-              area: feeder.area,
-              power: tel.power,
-              min: feeder.thresholds.minPower,
-              max: feeder.thresholds.maxPower,
-              time: tel.timestamp
-            });
+          if (tel) {
+            // Logic: Power is > 30% away from baseline while ON
+            const isOn = tel.power > 5;
+            const deviation = Math.abs(tel.power - device.baselineWatt);
+            const isFaulty = isOn && (deviation > (device.baselineWatt * 0.3));
+
+            if (isFaulty) {
+              alertList.push({
+                deviceId: device.deviceId,
+                area: device.area,
+                power: tel.power,
+                baseline: device.baselineWatt,
+                time: tel.timestamp
+              });
+            }
           }
+        } catch (e) {
+          // Skip if no telemetry found
         }
       }
       setAlerts(alertList);
@@ -46,7 +49,6 @@ export default function AlertPanel() {
 
   useEffect(() => {
     fetchAlerts();
-    // Refresh every 1 minute (not live, but keeps it updated)
     const interval = setInterval(fetchAlerts, 60000);
     return () => clearInterval(interval);
   }, []);
@@ -55,36 +57,40 @@ export default function AlertPanel() {
 
   return (
     <section className="space-y-4">
-      <div className="flex items-center gap-2 text-red-500 mb-4 px-1">
-        <Bell size={20} className="animate-bounce" />
-        <h3 className="font-bold text-lg uppercase tracking-tight">Critical System Alerts</h3>
+      <div className="flex items-center gap-2 text-red-600 mb-2 px-1">
+        <Bell size={18} className="animate-pulse" />
+        <h3 className="font-bold text-sm uppercase tracking-widest">Active Anomalies</h3>
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
         <AnimatePresence>
           {alerts.map((alert) => (
             <motion.div
-              key={alert.feederId}
-              initial={{ opacity: 0, y: 10 }}
-              animate={{ opacity: 1, y: 0 }}
-              className="bg-red-500/10 border border-red-500/30 p-4 rounded-2xl flex items-start gap-4 backdrop-blur-md"
+              key={alert.deviceId}
+              initial={{ opacity: 0, x: -10 }}
+              animate={{ opacity: 1, x: 0 }}
+              className="bg-white border border-red-100 p-4 rounded-xl flex items-start gap-4 shadow-sm"
             >
-              <div className="p-3 bg-red-500/20 rounded-xl text-red-500">
-                <TriangleAlert size={20} />
+              <div className="p-3 bg-red-50 rounded-lg text-red-600">
+                <AlertTriangle size={18} />
               </div>
               <div className="flex-1">
                 <div className="flex items-center justify-between">
-                  <span className="text-xs font-bold text-red-400 uppercase">Feeder Fault</span>
-                  <span className="text-[10px] text-gray-500">{new Date(alert.time).toLocaleTimeString()}</span>
+                  <span className="text-[10px] font-bold text-red-500 uppercase tracking-widest">Load Fault</span>
+                  <span className="text-[10px] text-slate-400 font-medium">{new Date(alert.time).toLocaleTimeString()}</span>
                 </div>
-                <h4 className="font-bold text-white mt-1">Node #{alert.feederId}</h4>
-                <p className="text-xs text-gray-400 mt-1">{alert.ward} • {alert.area}</p>
-                <div className="mt-3 flex items-center justify-between text-xs font-mono">
-                  <span className="text-gray-500">CONSUMPTION</span>
-                  <span className="text-red-500 font-bold">{alert.power}W</span>
-                </div>
-                <div className="h-1 bg-white/5 rounded-full mt-2 overflow-hidden">
-                  <div className="bg-red-500 h-full w-full opacity-50"></div>
+                <h4 className="font-bold text-slate-900 mt-1">Node #{alert.deviceId}</h4>
+                <p className="text-xs text-slate-500 mt-1">{alert.area}</p>
+                
+                <div className="mt-3 flex items-center justify-between bg-slate-50 p-2 rounded-lg border border-slate-100">
+                  <div className="text-[10px]">
+                    <p className="text-slate-400 font-bold uppercase">Measured</p>
+                    <p className="text-red-600 font-bold">{alert.power.toFixed(1)}W</p>
+                  </div>
+                  <div className="text-right text-[10px]">
+                    <p className="text-slate-400 font-bold uppercase">Baseline</p>
+                    <p className="text-slate-700 font-bold">{alert.baseline}W</p>
+                  </div>
                 </div>
               </div>
             </motion.div>

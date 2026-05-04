@@ -1,32 +1,24 @@
-// hardcoded admin credentials
-const ADMIN = {
-  email: "admin@tetech.com",
-  password: "123456",
+import axios from "axios";
+
+const API_BASE = import.meta.env.VITE_API_BASE_URL || "http://localhost:8080/api/sslms";
+
+export const loginUser = async (credentials) => {
+  try {
+    const response = await axios.post(`${API_BASE}/auth/login`, credentials);
+    return { success: true, ...response.data };
+  } catch (error) {
+    return { 
+      success: false, 
+      message: error.response?.data?.message || "Invalid credentials or server error" 
+    };
+  }
 };
 
-export const loginUser = ({ email, password }) => {
-  return new Promise((resolve, reject) => {
-    setTimeout(() => {
-      if (email === ADMIN.email && password === ADMIN.password) {
-        resolve({
-          success: true,
-          user: {
-            name: "Admin",
-            role: "admin",
-            email: ADMIN.email,
-          },
-        });
-      } else {
-        reject({
-          success: false,
-          message: "Invalid credentials",
-        });
-      }
-    }, 500); // simulate API delay
-  });
-};
-
-export const getMe = () => {
-  const user = localStorage.getItem("user");
-  return user ? JSON.parse(user) : null;
+export const setupAdmin = async (credentials) => {
+  try {
+    const response = await axios.post(`${API_BASE}/auth/setup`, credentials);
+    return { success: true, message: response.data };
+  } catch (error) {
+    return { success: false, message: error.response?.data || "Setup failed" };
+  }
 };
