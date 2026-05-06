@@ -1,9 +1,10 @@
 import { NavLink, useNavigate } from "react-router-dom";
-import { 
-  LayoutDashboard, 
-  Map as MapIcon, 
-  BarChart3, 
-  Settings, 
+import {
+  LayoutDashboard,
+  Map as MapIcon,
+  BarChart3,
+  CalendarCheck2,
+  Settings,
   LogOut,
   Radio,
   Lightbulb
@@ -23,7 +24,7 @@ const MenuItem = ({ to, icon: Icon, label, end = false }) => (
 
 export default function Sidebar({ onClose }) {
   const navigate = useNavigate();
-  
+
   const handleLogout = () => {
     localStorage.removeItem("auth");
     localStorage.removeItem("user");
@@ -31,24 +32,19 @@ export default function Sidebar({ onClose }) {
   };
 
   return (
-    <aside className="h-screen w-72 bg-white border-r border-slate-200 text-slate-900 flex flex-col z-50">
+    <aside className="h-screen w-80 bg-white border-r border-slate-200 text-slate-900 flex flex-col z-50">
       <div className="p-8 flex items-center gap-3">
-        <div className="p-2 bg-blue-600 rounded-lg">
-          <Lightbulb size={24} className="text-white" />
-        </div>
-        <div>
-          <h1 className="text-xl font-bold tracking-tight text-slate-900">SSLMS</h1>
-          <p className="text-[10px] text-blue-600 font-bold uppercase tracking-widest">Smart Control</p>
-        </div>
+        <img src={logonew} alt="logo" className="h-8 w-auto object-cover rounded-lg" />
       </div>
 
       <nav className="flex-1 px-4 py-6 space-y-1">
         <div className="text-[10px] font-bold text-slate-400 uppercase tracking-widest px-4 mb-4">Menu</div>
         <div onClick={onClose}><MenuItem to="/" icon={LayoutDashboard} label="Dashboard" end /></div>
         <div onClick={onClose}><MenuItem to="/map" icon={MapIcon} label="Geospatial Map" /></div>
+        <div onClick={onClose}><MenuItem to="/fault-history" icon={CalendarCheck2} label="Fault History" /></div>
         <div onClick={onClose}><MenuItem to="/analytics" icon={BarChart3} label="Analytics" /></div>
         <div onClick={onClose}><MenuItem to="/live" icon={Radio} label="Telemetry Logs" /></div>
-        
+
         <div className="pt-8">
           <div className="text-[10px] font-bold text-slate-400 uppercase tracking-widest px-4 mb-4">Configuration</div>
           <div onClick={onClose}><MenuItem to="/settings" icon={Settings} label="System Settings" /></div>
@@ -56,7 +52,7 @@ export default function Sidebar({ onClose }) {
       </nav>
 
       <div className="p-4 border-t border-slate-100">
-        <button 
+        <button
           onClick={handleLogout}
           className="w-full flex items-center gap-3 px-4 py-3 rounded-lg text-slate-500 hover:text-red-600 hover:bg-red-50 transition-all"
         >

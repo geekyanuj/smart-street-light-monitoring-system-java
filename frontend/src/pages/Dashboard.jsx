@@ -133,10 +133,9 @@ export default function Dashboard() {
 
   return (
     <div className="space-y-6 pb-12 animate-in fade-in duration-500">
-      {/* Command Center Header */}
       <div className="flex flex-col xl:flex-row xl:items-center justify-between gap-6">
         <div>
-          <h1 className="text-3xl font-bold text-slate-900 tracking-tight">System Command Center</h1>
+          <h3 className="text-2xl font-bold text-slate-900 tracking-tight"> Smart Street Light Monitoring System</h3>
           <p className="text-slate-500 mt-1 font-medium flex items-center gap-2">
             <span className={`w-2 h-2 rounded-full ${refreshing ? 'bg-blue-500 animate-pulse' : (telemetry ? 'bg-emerald-500' : 'bg-slate-300')}`}></span>
             {selectedDeviceId ? `Node #${selectedDeviceId} Active` : 'Select Node from Hierarchy'}
@@ -317,9 +316,9 @@ export default function Dashboard() {
                 </div>
 
                 <div className="p-5 bg-blue-50/50 rounded-xl border border-blue-100">
-                  <p className="text-[10px] text-blue-600 mb-2 font-bold uppercase tracking-widest">Deployment Info</p>
+                  <p className="text-[10px] text-blue-600 mb-2 font-bold uppercase tracking-widest">General Info</p>
                   <p className="text-xs text-slate-600 leading-relaxed">
-                    Commands sent to this node are acknowledged via MQTT. Current sync interval is 30s.
+                    Before making any changes to the device, ensure that the device is in a safe state.
                   </p>
                 </div>
               </div>
