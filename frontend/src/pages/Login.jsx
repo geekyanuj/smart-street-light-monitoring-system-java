@@ -1,10 +1,12 @@
 import { useState } from "react";
 import { loginUser, setupAdmin } from "../api/authApi";
+import banner from "../assets/banner.png";
+import logo from "../assets/logo.png";
 import { LogIn, ShieldCheck, AlertCircle, Settings, UserPlus } from "lucide-react";
 
 export default function Login() {
   const [username, setUsername] = useState("admin");
-  const [password, setPassword] = useState("admin123");
+  const [password, setPassword] = useState("admin123"); //password will be admin123
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const [success, setSuccess] = useState(null);
@@ -42,15 +44,10 @@ export default function Login() {
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-slate-50 px-4">
+    <div className="min-h-screen flex items-center justify-center bg-slate-50 px-4" style={{ backgroundImage: `url(${banner})`, backgroundSize: "cover", backgroundPosition: "bottom" }}>
       <div className="w-full max-w-md">
-        {/* Branding */}
-        <div className="text-center mb-10">
-          <div className="inline-flex p-4 bg-blue-600 rounded-2xl shadow-xl shadow-blue-200 mb-6">
-            <ShieldCheck size={40} className="text-white" />
-          </div>
-          <h1 className="text-3xl font-black text-slate-900 tracking-tight uppercase italic">SSLMS</h1>
-          <p className="text-slate-500 font-medium">Smart Street Light Monitoring System</p>
+        <div className="relative z-10 flex items-center justify-center mb-5">
+          <img src={logo} alt="Logo" />
         </div>
 
         {/* Login/Setup Form */}
@@ -93,7 +90,7 @@ export default function Login() {
                 required
                 className="w-full px-4 py-3 rounded-xl bg-slate-50 border border-slate-200 text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-600/20 focus:border-blue-600 transition-all font-semibold"
                 type="password"
-                placeholder="••••••••"
+                placeholder="Enter your password"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
               />
@@ -116,12 +113,12 @@ export default function Login() {
           </form>
 
           <div className="mt-8 pt-6 border-t border-slate-100 text-center">
-             <button 
-               onClick={() => setIsSetupMode(!isSetupMode)}
-               className="text-xs font-bold text-slate-400 hover:text-blue-600 transition-colors uppercase tracking-widest"
-             >
-               {isSetupMode ? "Back to Sign In" : "First time setup? Click here"}
-             </button>
+            <button
+              onClick={() => setIsSetupMode(!isSetupMode)}
+              className="text-xs font-bold text-slate-400 hover:text-blue-600 transition-colors uppercase tracking-widest"
+            >
+              {isSetupMode ? "Back to Sign In" : "First time setup? Click here"}
+            </button>
           </div>
         </div>
 

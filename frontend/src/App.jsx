@@ -12,6 +12,7 @@ import DeviceDetails from "./pages/DeviceDetails";
 import Settings from "./pages/Settings";
 import Sidebar from "./components/Sidebar";
 import Navbar from "./components/Navbar";
+import FaultHistory from "./pages/FaultHistory";
 
 // Helper to check authentication
 const isAuthenticated = () => {
@@ -55,17 +56,17 @@ function DashboardLayout({ children }) {
 
       <div className="flex-1 flex flex-col min-w-0">
         <header className="sticky top-0 z-50 w-full h-16 px-4 md:px-8 flex items-center justify-between bg-white border-b border-slate-200">
-           <div className="flex items-center gap-4">
-             <button 
-               onClick={() => setIsSidebarOpen(true)}
-               className="p-2 lg:hidden text-slate-500 hover:text-slate-900 transition-colors"
-             >
-               <Menu size={20} />
-             </button>
-             <div className="lg:hidden font-black text-blue-600 tracking-tighter text-xl">SSLMS</div>
-           </div>
-           
-           <Navbar />
+          <div className="flex items-center gap-4">
+            <button
+              onClick={() => setIsSidebarOpen(true)}
+              className="p-2 lg:hidden text-slate-500 hover:text-slate-900 transition-colors"
+            >
+              <Menu size={20} />
+            </button>
+            <div className="lg:hidden font-black text-blue-600 tracking-tighter text-xl">SSLMS</div>
+          </div>
+
+          <Navbar />
         </header>
         <main className="flex-1 p-4 md:p-8 overflow-y-auto overflow-x-hidden">
           <div className="max-w-7xl mx-auto">
@@ -82,7 +83,7 @@ export default function App() {
     <BrowserRouter>
       <Routes>
         <Route path="/login" element={<Login />} />
-        
+
         <Route
           path="/"
           element={
@@ -93,7 +94,18 @@ export default function App() {
             </ProtectedRoute>
           }
         />
-        
+
+        <Route
+          path="/fault-history"
+          element={
+            <ProtectedRoute>
+              <DashboardLayout>
+                <FaultHistory />
+              </DashboardLayout>
+            </ProtectedRoute>
+          }
+        />
+
         <Route
           path="/map"
           element={
@@ -104,7 +116,7 @@ export default function App() {
             </ProtectedRoute>
           }
         />
-        
+
         <Route
           path="/analytics"
           element={
@@ -115,7 +127,7 @@ export default function App() {
             </ProtectedRoute>
           }
         />
-        
+
         <Route
           path="/live"
           element={
@@ -126,7 +138,7 @@ export default function App() {
             </ProtectedRoute>
           }
         />
-        
+
         <Route
           path="/settings"
           element={

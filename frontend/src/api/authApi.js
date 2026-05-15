@@ -7,9 +7,9 @@ export const loginUser = async (credentials) => {
     const response = await axios.post(`${API_BASE}/auth/login`, credentials);
     return { success: true, ...response.data };
   } catch (error) {
-    return { 
-      success: false, 
-      message: error.response?.data?.message || "Invalid credentials or server error" 
+    return {
+      success: false,
+      message: error.response?.data?.message || "Invalid credentials or server error"
     };
   }
 };
